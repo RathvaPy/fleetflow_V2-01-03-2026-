@@ -14,7 +14,7 @@ import { useAuth, type UserRole } from "@/lib/auth-context"
 type Screen = "login" | "forgot" | "forgot-success" | "register" | "register-success"
 
 export function LoginPage() {
-  const { login, signup, resetPassword, supabaseConfigured } = useAuth()
+  const { login, signup, resetPassword } = useAuth()
   const [screen, setScreen] = useState<Screen>("login")
   const [loading, setLoading] = useState(false)
 
@@ -95,21 +95,6 @@ export function LoginPage() {
             <p className="text-sm text-muted-foreground">Fleet & Logistics Management</p>
           </div>
         </div>
-
-        {/* Supabase not configured notice */}
-        {!supabaseConfigured && (
-          <div className="w-full rounded-lg border border-border bg-muted/50 p-4">
-            <div className="flex items-start gap-2.5">
-              <AlertCircle className="size-4 text-muted-foreground shrink-0 mt-0.5" />
-              <div className="flex flex-col gap-1">
-                <p className="text-xs font-medium text-foreground">Offline Mode</p>
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  Supabase is not configured. You can sign in with any email and password to explore the app. Connect Supabase for full authentication.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
 
         {/* ========== LOGIN SCREEN ========== */}
         {screen === "login" && (
@@ -398,10 +383,7 @@ export function LoginPage() {
                 <p className="text-xs text-muted-foreground">
                   {"Welcome, "}
                   <span className="font-medium text-foreground">{regName}</span>.
-                  {supabaseConfigured
-                    ? " Please check your email to verify your account before signing in."
-                    : " Your account has been created. You can now sign in."
-                  }
+                  Your account has been created successfully. You can now sign in.
                 </p>
               </div>
               <Button

@@ -6,25 +6,8 @@ import {
   type VehicleStatus, type DriverStatus, type TripStatus,
   initialVehicles, initialDrivers, initialTrips, initialMaintenanceLogs, initialFuelLogs,
 } from "./fleet-data"
-import { useAuth } from "./auth-context"
-import {
-  fetchVehicles,
-  fetchDrivers,
-  fetchTrips,
-  fetchMaintenanceLogs,
-  insertVehicle,
-  updateVehicleInDb,
-  deleteVehicleFromDb,
-  insertDriver,
-  updateDriverInDb,
-  deleteDriverFromDb,
-  insertTrip,
-  dispatchTrip,
-  completeTrip,
-  cancelTrip,
-  insertMaintenanceLog,
-  updateMaintenanceLogInDb,
-} from "./supabase/data"
+
+const API_URL = "/api"
 
 interface FleetContextType {
   vehicles: Vehicle[]
@@ -53,216 +36,190 @@ interface FleetContextType {
 const FleetContext = createContext<FleetContextType | null>(null)
 
 export function FleetProvider({ children }: { children: ReactNode }) {
-  const [vehicles, setVehicles] = useState<Vehicle[]>(initialVehicles)
-  const [drivers, setDrivers] = useState<Driver[]>(initialDrivers)
-  const [trips, setTrips] = useState<Trip[]>(initialTrips)
-  const [maintenanceLogs, setMaintenanceLogs] = useState<MaintenanceLog[]>(initialMaintenanceLogs)
-  const [fuelLogs, setFuelLogs] = useState<FuelLog[]>(initialFuelLogs)
+  const [vehicles, setVehicles] = useState<Vehicle[]>([])
+  const [drivers, setDrivers] = useState<Driver[]>([])
+  const [trips, setTrips] = useState<Trip[]>([])
+  const [maintenanceLogs, setMaintenanceLogs] = useState<MaintenanceLog[]>([])
+  const [fuelLogs, setFuelLogs] = useState<FuelLog[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const { supabaseConfigured } = useAuth()
 
-  // Fetch data from Supabase on mount if configured
   const refetchData = useCallback(async () => {
-    if (!supabaseConfigured) {
-      setIsLoading(false)
-      return
-    }
-
-    setIsLoading(true)
+    setIsLoading(true);
     try {
-      const [vehiclesData, driversData, tripsData, maintenanceData] = await Promise.all([
-        fetchVehicles(),
-        fetchDrivers(),
-        fetchTrips(),
-        fetchMaintenanceLogs(),
-      ])
+      const endpoints = ["vehicles", "drivers", "trips", "maintenance"];
+      const results = await Promise.allSettled(
+        endpoints.map(async (e) => {
+          const res = await fetch(`${API_URL}/${e}`);
+          if (!res.ok) {
+            const errBody = await res.json().catch(() => ({}));
+            console.error(`API ${e} error ${res.status}:`, errBody.error || res.statusText);
+            return []; // return empty array on error so app still loads
+          }
+          return res.json();
+        })
+      );
 
-      setVehicles(vehiclesData)
-      setDrivers(driversData)
-      setTrips(tripsData)
-      setMaintenanceLogs(maintenanceData)
-    } catch (error) {
-      console.error("Error fetching data from Supabase:", error)
+      const [vResult, dResult, tResult, mResult] = results;
+      setVehicles(vResult.status === "fulfilled" ? vResult.value : []);
+      setDrivers(dResult.status === "fulfilled" ? dResult.value : []);
+      setTrips(tResult.status === "fulfilled" ? tResult.value : []);
+      setMaintenanceLogs(mResult.status === "fulfilled" ? mResult.value : []);
+
+      const anyError = results.some(r => r.status === "rejected");
+      if (anyError) {
+        console.warn("Some API calls failed. Ensure MySQL is running and tables are imported from reconstruct-db.sql");
+      } else {
+        console.log("Data fetched successfully.");
+      }
+    } catch (error: any) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error("CRITICAL: Failed to reach API. Error:", msg);
+      console.warn("Check: 1) node server.js is running. 2) MySQL is running. 3) reconstruct-db.sql is imported in phpMyAdmin.");
     } finally {
-      setIsLoading(false)
+      setIsLoading(false);
     }
-  }, [supabaseConfigured])
+  }, []);
 
   useEffect(() => {
     refetchData()
   }, [refetchData])
 
   const addVehicle = useCallback(async (v: Omit<Vehicle, "id">) => {
-    if (supabaseConfigured) {
-      const newVehicle = await insertVehicle(v)
+    try {
+      const res = await fetch(`${API_URL}/vehicles`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(v),
+      })
+      const newVehicle = await res.json()
       setVehicles((prev) => [...prev, newVehicle])
-    } else {
-      const id = `V${String(vehicles.length + 1).padStart(3, "0")}`
-      setVehicles((prev) => [...prev, { ...v, id }])
+    } catch (error) {
+      console.error("Error adding vehicle:", error)
     }
-  }, [vehicles.length, supabaseConfigured])
+  }, [])
 
   const updateVehicle = useCallback(async (id: string, updates: Partial<Vehicle>) => {
-    if (supabaseConfigured) {
-      const updated = await updateVehicleInDb(id, updates)
-      setVehicles((prev) => prev.map((v) => (v.id === id ? updated : v)))
-    } else {
+    try {
+      await fetch(`${API_URL}/vehicles/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      })
       setVehicles((prev) => prev.map((v) => (v.id === id ? { ...v, ...updates } : v)))
+    } catch (error) {
+      console.error("Error updating vehicle:", error)
     }
-  }, [supabaseConfigured])
+  }, [])
 
   const deleteVehicle = useCallback(async (id: string) => {
-    if (supabaseConfigured) {
-      await deleteVehicleFromDb(id)
+    try {
+      await fetch(`${API_URL}/vehicles/${id}`, { method: "DELETE" })
+      setVehicles((prev) => prev.filter((v) => v.id !== id))
+    } catch (error) {
+      console.error("Error deleting vehicle:", error)
     }
-    setVehicles((prev) => prev.filter((v) => v.id !== id))
-  }, [supabaseConfigured])
+  }, [])
 
   const addDriver = useCallback(async (d: Omit<Driver, "id">) => {
-    if (supabaseConfigured) {
-      const newDriver = await insertDriver(d)
+    try {
+      const res = await fetch(`${API_URL}/drivers`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(d),
+      })
+      const newDriver = await res.json()
       setDrivers((prev) => [...prev, newDriver])
-    } else {
-      const id = `D${String(drivers.length + 1).padStart(3, "0")}`
-      setDrivers((prev) => [...prev, { ...d, id }])
+    } catch (error) {
+      console.error("Error adding driver:", error)
     }
-  }, [drivers.length, supabaseConfigured])
+  }, [])
 
   const updateDriver = useCallback(async (id: string, updates: Partial<Driver>) => {
-    if (supabaseConfigured) {
-      const updated = await updateDriverInDb(id, updates)
-      setDrivers((prev) => prev.map((d) => (d.id === id ? updated : d)))
-    } else {
+    try {
+      await fetch(`${API_URL}/drivers/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      })
       setDrivers((prev) => prev.map((d) => (d.id === id ? { ...d, ...updates } : d)))
+    } catch (error) {
+      console.error("Error updating driver:", error)
     }
-  }, [supabaseConfigured])
+  }, [])
 
   const deleteDriver = useCallback(async (id: string) => {
-    if (supabaseConfigured) {
-      await deleteDriverFromDb(id)
+    try {
+      await fetch(`${API_URL}/drivers/${id}`, { method: "DELETE" })
+      setDrivers((prev) => prev.filter((d) => d.id !== id))
+    } catch (error) {
+      console.error("Error deleting driver:", error)
     }
-    setDrivers((prev) => prev.filter((d) => d.id !== id))
-  }, [supabaseConfigured])
+  }, [])
 
   const addTrip = useCallback(async (t: Omit<Trip, "id">) => {
-    if (supabaseConfigured) {
-      const newTrip = await insertTrip(t)
+    try {
+      const res = await fetch(`${API_URL}/trips`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(t),
+      })
+      const newTrip = await res.json()
       setTrips((prev) => [newTrip, ...prev])
-      // Refresh vehicles and drivers to get updated status
-      const [updatedVehicles, updatedDrivers] = await Promise.all([
-        fetchVehicles(),
-        fetchDrivers(),
-      ])
-      setVehicles(updatedVehicles)
-      setDrivers(updatedDrivers)
-    } else {
-      const id = `T${String(trips.length + 1).padStart(3, "0")}`
-      setTrips((prev) => [...prev, { ...t, id }])
-      // Update vehicle & driver status
-      setVehicles((prev) => prev.map((v) => (v.id === t.vehicleId ? { ...v, status: "On Trip" as VehicleStatus } : v)))
-      setDrivers((prev) => prev.map((d) => (d.id === t.driverId ? { ...d, status: "On Duty" as DriverStatus } : d)))
+      refetchData() // Refresh to get updated vehicle/driver statuses
+    } catch (error) {
+      console.error("Error adding trip:", error)
     }
-  }, [trips.length, supabaseConfigured])
+  }, [refetchData])
 
   const updateTrip = useCallback((id: string, updates: Partial<Trip>) => {
-    // Local update only - for cases where we don't need DB update
     setTrips((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)))
   }, [])
 
   const updateTripStatus = useCallback(async (id: string, status: TripStatus, endOdometer?: number) => {
-    if (supabaseConfigured) {
-      let updatedTrip: Trip
-      if (status === "Dispatched") {
-        updatedTrip = await dispatchTrip(id)
-      } else if (status === "Completed") {
-        updatedTrip = await completeTrip(id, endOdometer!)
-      } else if (status === "Cancelled") {
-        updatedTrip = await cancelTrip(id)
-      } else {
-        return
-      }
-      
-      setTrips((prev) => prev.map((t) => (t.id === id ? updatedTrip : t)))
-      
-      // Refresh vehicles and drivers to get updated status
-      const [updatedVehicles, updatedDrivers] = await Promise.all([
-        fetchVehicles(),
-        fetchDrivers(),
-      ])
-      setVehicles(updatedVehicles)
-      setDrivers(updatedDrivers)
-    } else {
-      // Local state update (fallback)
-      setTrips((prev) =>
-        prev.map((t) => {
-          if (t.id !== id) return t
-          const updated = { ...t, status }
-          if (status === "Dispatched") updated.dispatchedAt = new Date().toISOString()
-          if (status === "Completed") {
-            updated.completedAt = new Date().toISOString()
-            if (endOdometer) updated.endOdometer = endOdometer
-          }
-          return updated
-        })
-      )
-      // If completed or cancelled, free up vehicle & driver
-      if (status === "Completed" || status === "Cancelled") {
-        const trip = trips.find((t) => t.id === id)
-        if (trip) {
-          setVehicles((prev) => prev.map((v) => (v.id === trip.vehicleId ? { ...v, status: "Available" as VehicleStatus, ...(endOdometer ? { odometer: endOdometer } : {}) } : v)))
-          setDrivers((prev) => prev.map((d) => (d.id === trip.driverId ? { ...d, status: "Off Duty" as DriverStatus, tripsCompleted: d.tripsCompleted + (status === "Completed" ? 1 : 0) } : d)))
-        }
-      }
+    try {
+      await fetch(`${API_URL}/trips/${id}/status`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, endOdometer }),
+      })
+      refetchData()
+    } catch (error) {
+      console.error("Error updating trip status:", error)
     }
-  }, [trips, supabaseConfigured])
+  }, [refetchData])
 
   const addMaintenanceLog = useCallback(async (m: Omit<MaintenanceLog, "id">) => {
-    if (supabaseConfigured) {
-      const newLog = await insertMaintenanceLog(m)
+    try {
+      const res = await fetch(`${API_URL}/maintenance`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(m),
+      })
+      const newLog = await res.json()
       setMaintenanceLogs((prev) => [newLog, ...prev])
-      // Refresh vehicles to get updated status
-      const updatedVehicles = await fetchVehicles()
-      setVehicles(updatedVehicles)
-    } else {
-      const id = `M${String(maintenanceLogs.length + 1).padStart(3, "0")}`
-      setMaintenanceLogs((prev) => [...prev, { ...m, id }])
-      // Auto-set vehicle to "In Shop"
-      if (m.status !== "Completed") {
-        setVehicles((prev) => prev.map((v) => (v.id === m.vehicleId ? { ...v, status: "In Shop" as VehicleStatus } : v)))
-      }
+      refetchData()
+    } catch (error) {
+      console.error("Error adding maintenance log:", error)
     }
-  }, [maintenanceLogs.length, supabaseConfigured])
+  }, [refetchData])
 
   const updateMaintenanceLog = useCallback(async (id: string, updates: Partial<MaintenanceLog>) => {
-    if (supabaseConfigured) {
-      const updated = await updateMaintenanceLogInDb(id, updates)
-      setMaintenanceLogs((prev) => prev.map((m) => (m.id === id ? updated : m)))
-      // Refresh vehicles to get updated status
-      const updatedVehicles = await fetchVehicles()
-      setVehicles(updatedVehicles)
-    } else {
-      setMaintenanceLogs((prev) => prev.map((m) => (m.id === id ? { ...m, ...updates } : m)))
-      // If marking as completed, set vehicle back to Available
-      if (updates.status === "Completed") {
-        const log = maintenanceLogs.find((m) => m.id === id)
-        if (log) {
-          const otherActiveLogs = maintenanceLogs.filter(
-            (m) => m.id !== id && m.vehicleId === log.vehicleId && m.status !== "Completed"
-          )
-          if (otherActiveLogs.length === 0) {
-            setVehicles((prev) => prev.map((v) => (v.id === log.vehicleId ? { ...v, status: "Available" as VehicleStatus } : v)))
-          }
-        }
-      }
+    try {
+      await fetch(`${API_URL}/maintenance/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      })
+      refetchData()
+    } catch (error) {
+      console.error("Error updating maintenance log:", error)
     }
-  }, [maintenanceLogs, supabaseConfigured])
+  }, [refetchData])
 
   const addFuelLog = useCallback((f: Omit<FuelLog, "id">) => {
-    // Fuel logs are not stored in Supabase in this implementation
-    // Keeping local-only for now
-    const id = `F${String(fuelLogs.length + 1).padStart(3, "0")}`
+    const id = `F${Date.now()}`
     setFuelLogs((prev) => [...prev, { ...f, id }])
-  }, [fuelLogs.length])
+  }, [])
 
   const getVehicle = useCallback((id: string) => vehicles.find((v) => v.id === id), [vehicles])
   const getDriver = useCallback((id: string) => drivers.find((d) => d.id === id), [drivers])
