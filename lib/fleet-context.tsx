@@ -3,11 +3,54 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
 import {
   type Vehicle, type Driver, type Trip, type MaintenanceLog, type FuelLog,
-  type VehicleStatus, type DriverStatus, type TripStatus,
-  initialVehicles, initialDrivers, initialTrips, initialMaintenanceLogs, initialFuelLogs,
+  type TripStatus,
 } from "./fleet-data"
 
 const API_URL = "/api"
+
+function toNumber(value: unknown, fallback = 0) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
+function normalizeVehicle(v: Vehicle): Vehicle {
+  return {
+    ...v,
+    maxCapacity: toNumber(v.maxCapacity),
+    odometer: toNumber(v.odometer),
+    acquisitionCost: toNumber(v.acquisitionCost),
+    yearAcquired: toNumber(v.yearAcquired, new Date().getFullYear()),
+  }
+}
+
+function normalizeTrip(t: Trip): Trip {
+  return {
+    ...t,
+    cargoWeight: toNumber(t.cargoWeight),
+    startOdometer: toNumber(t.startOdometer),
+    endOdometer: t.endOdometer == null ? undefined : toNumber(t.endOdometer),
+    estimatedFuelCost: t.estimatedFuelCost == null ? undefined : toNumber(t.estimatedFuelCost),
+    actualFuelCost: t.actualFuelCost == null ? undefined : toNumber(t.actualFuelCost),
+    litersFilled: t.litersFilled == null ? undefined : toNumber(t.litersFilled),
+    finalOdometer: t.finalOdometer == null ? undefined : toNumber(t.finalOdometer),
+  }
+}
+
+function normalizeMaintenanceLog(log: MaintenanceLog): MaintenanceLog {
+  return {
+    ...log,
+    cost: toNumber(log.cost),
+  }
+}
+
+function normalizeFuelLog(log: FuelLog): FuelLog {
+  return {
+    ...log,
+    liters: toNumber(log.liters),
+    cost: toNumber(log.cost),
+    odometer: toNumber(log.odometer),
+  }
+}
 
 interface FleetContextType {
   vehicles: Vehicle[]
@@ -23,11 +66,11 @@ interface FleetContextType {
   updateDriver: (id: string, updates: Partial<Driver>) => Promise<void>
   deleteDriver: (id: string) => Promise<void>
   addTrip: (t: Omit<Trip, "id">) => Promise<void>
-  updateTrip: (id: string, updates: Partial<Trip>) => void
+  updateTrip: (id: string, updates: Partial<Trip>) => Promise<void>
   updateTripStatus: (id: string, status: TripStatus, endOdometer?: number) => Promise<void>
   addMaintenanceLog: (m: Omit<MaintenanceLog, "id">) => Promise<void>
   updateMaintenanceLog: (id: string, updates: Partial<MaintenanceLog>) => Promise<void>
-  addFuelLog: (f: Omit<FuelLog, "id">) => void
+  addFuelLog: (f: Omit<FuelLog, "id">) => Promise<void>
   getVehicle: (id: string) => Vehicle | undefined
   getDriver: (id: string) => Driver | undefined
   refetchData: () => Promise<void>
@@ -46,7 +89,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
   const refetchData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const endpoints = ["vehicles", "drivers", "trips", "maintenance"];
+      const endpoints = ["vehicles", "drivers", "trips", "maintenance", "fuel"];
       const results = await Promise.allSettled(
         endpoints.map(async (e) => {
           const res = await fetch(`${API_URL}/${e}`);
@@ -59,11 +102,12 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         })
       );
 
-      const [vResult, dResult, tResult, mResult] = results;
-      setVehicles(vResult.status === "fulfilled" ? vResult.value : []);
+      const [vResult, dResult, tResult, mResult, fResult] = results;
+      setVehicles(vResult.status === "fulfilled" ? vResult.value.map(normalizeVehicle) : []);
       setDrivers(dResult.status === "fulfilled" ? dResult.value : []);
-      setTrips(tResult.status === "fulfilled" ? tResult.value : []);
-      setMaintenanceLogs(mResult.status === "fulfilled" ? mResult.value : []);
+      setTrips(tResult.status === "fulfilled" ? tResult.value.map(normalizeTrip) : []);
+      setMaintenanceLogs(mResult.status === "fulfilled" ? mResult.value.map(normalizeMaintenanceLog) : []);
+      setFuelLogs(fResult.status === "fulfilled" ? fResult.value.map(normalizeFuelLog) : []);
 
       const anyError = results.some(r => r.status === "rejected");
       if (anyError) {
@@ -92,7 +136,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify(v),
       })
       const newVehicle = await res.json()
-      setVehicles((prev) => [...prev, newVehicle])
+      setVehicles((prev) => [...prev, normalizeVehicle(newVehicle)])
     } catch (error) {
       console.error("Error adding vehicle:", error)
     }
@@ -164,15 +208,24 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify(t),
       })
       const newTrip = await res.json()
-      setTrips((prev) => [newTrip, ...prev])
+      setTrips((prev) => [normalizeTrip(newTrip), ...prev])
       refetchData() // Refresh to get updated vehicle/driver statuses
     } catch (error) {
       console.error("Error adding trip:", error)
     }
   }, [refetchData])
 
-  const updateTrip = useCallback((id: string, updates: Partial<Trip>) => {
-    setTrips((prev) => prev.map((t) => (t.id === id ? { ...t, ...updates } : t)))
+  const updateTrip = useCallback(async (id: string, updates: Partial<Trip>) => {
+    try {
+      await fetch(`${API_URL}/trips/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      })
+      setTrips((prev) => prev.map((t) => (t.id === id ? normalizeTrip({ ...t, ...updates }) : t)))
+    } catch (error) {
+      console.error("Error updating trip:", error)
+    }
   }, [])
 
   const updateTripStatus = useCallback(async (id: string, status: TripStatus, endOdometer?: number) => {
@@ -196,7 +249,7 @@ export function FleetProvider({ children }: { children: ReactNode }) {
         body: JSON.stringify(m),
       })
       const newLog = await res.json()
-      setMaintenanceLogs((prev) => [newLog, ...prev])
+      setMaintenanceLogs((prev) => [normalizeMaintenanceLog(newLog), ...prev])
       refetchData()
     } catch (error) {
       console.error("Error adding maintenance log:", error)
@@ -216,9 +269,18 @@ export function FleetProvider({ children }: { children: ReactNode }) {
     }
   }, [refetchData])
 
-  const addFuelLog = useCallback((f: Omit<FuelLog, "id">) => {
-    const id = `F${Date.now()}`
-    setFuelLogs((prev) => [...prev, { ...f, id }])
+  const addFuelLog = useCallback(async (f: Omit<FuelLog, "id">) => {
+    try {
+      const res = await fetch(`${API_URL}/fuel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(f),
+      })
+      const newFuelLog = await res.json()
+      setFuelLogs((prev) => [normalizeFuelLog(newFuelLog), ...prev])
+    } catch (error) {
+      console.error("Error adding fuel log:", error)
+    }
   }, [])
 
   const getVehicle = useCallback((id: string) => vehicles.find((v) => v.id === id), [vehicles])

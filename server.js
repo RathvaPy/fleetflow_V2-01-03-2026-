@@ -4,6 +4,8 @@ const db = require("./db");
 
 const app = express();
 
+const generateId = (prefix) => `${prefix}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
 // Root logging middleware to debug incoming requests
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
@@ -46,7 +48,7 @@ app.post("/api/auth/signup", async (req, res) => {
     if (!email || !password || !name) {
       return res.status(400).json({ error: "Email, password, and name are required." });
     }
-    const id = `U${Date.now()}`;
+    const id = generateId('U');
     const avatarInitials = name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
     await db.query(
       "INSERT INTO users (id, full_name, email, password, role, avatar_initials) VALUES (?, ?, ?, ?, ?, ?)",
@@ -98,7 +100,7 @@ app.get("/api/vehicles", async (req, res) => {
 app.post("/api/vehicles", async (req, res) => {
   try {
     const { name, type, licensePlate, maxCapacity, odometer, status, region, acquisitionCost, yearAcquired } = req.body;
-    const id = `V${Date.now()}`;
+    const id = generateId('V');
     await db.query(
       "INSERT INTO vehicles (id, name, type, license_plate, max_capacity, odometer, status, region, acquisition_cost, year_acquired) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
       [id, name, type, licensePlate, maxCapacity || 0, odometer || 0, status || "Available", region, acquisitionCost || 0, yearAcquired || new Date().getFullYear()]
@@ -161,7 +163,7 @@ app.get("/api/drivers", async (req, res) => {
 app.post("/api/drivers", async (req, res) => {
   try {
     const { name, email, phone, licenseNumber, licenseExpiry, licenseCategories, status, safetyScore } = req.body;
-    const id = `D${Date.now()}`;
+    const id = generateId('D');
     const avatarInitials = name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2);
     await db.query(
       "INSERT INTO drivers (id, name, email, phone, license_number, license_expiry, status, safety_score, trips_completed, avatar_initials) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -238,7 +240,7 @@ app.get("/api/trips", async (req, res) => {
 app.post("/api/trips", async (req, res) => {
   try {
     const { vehicleId, driverId, origin, destination, cargoWeight, cargoDescription, status, startOdometer, estimatedFuelCost } = req.body;
-    const id = `T${Date.now()}`;
+    const id = generateId('T');
     const createdAt = new Date().toISOString();
     await db.query(
       `INSERT INTO trips (id, vehicle_id, driver_id, origin, destination, cargo_weight, cargo_description, status, created_at, start_odometer, estimated_fuel_cost)
@@ -338,7 +340,7 @@ app.get("/api/maintenance", async (req, res) => {
 app.post("/api/maintenance", async (req, res) => {
   try {
     const { vehicleId, type, description, cost, date, status } = req.body;
-    const id = `M${Date.now()}`;
+    const id = generateId('M');
     await db.query(
       "INSERT INTO maintenance_logs (id, vehicle_id, service_type, description, cost, service_date, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
       [id, vehicleId, type, description, cost || 0, date, status || "Scheduled"]
@@ -378,6 +380,42 @@ app.delete("/api/maintenance/:id", async (req, res) => {
   try {
     await db.query("DELETE FROM maintenance_logs WHERE id = ?", [req.params.id]);
     res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==================== FUEL LOGS ====================
+app.get("/api/fuel", async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT id, vehicle_id as vehicleId, trip_id as tripId, liters, cost,
+       log_date as date, odometer_reading as odometer
+       FROM fuel_logs ORDER BY log_date DESC, id DESC`
+    );
+    res.json(rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/fuel", async (req, res) => {
+  try {
+    const { vehicleId, tripId, liters, cost, date, odometer } = req.body;
+    const id = generateId("F");
+    await db.query(
+      "INSERT INTO fuel_logs (id, vehicle_id, trip_id, liters, cost, log_date, odometer_reading) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      [id, vehicleId, tripId || null, liters || 0, cost || 0, date, odometer || 0]
+    );
+    res.status(201).json({
+      id,
+      vehicleId,
+      tripId: tripId || null,
+      liters: liters || 0,
+      cost: cost || 0,
+      date,
+      odometer: odometer || 0
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

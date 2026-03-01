@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { useFleet } from "@/lib/fleet-context"
 import { useAuth } from "@/lib/auth-context"
-import { monthlyCostData, quarterlyCostData } from "@/lib/fleet-data"
+
 import {
   Bar,
   BarChart,
@@ -82,19 +82,54 @@ export function AnalyticsPage() {
   ]
 
   // Chart data based on time view
-  const chartData = timeView === "monthly" ? monthlyCostData : quarterlyCostData
+  const monthlyData = useMemo(() => {
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    const data = months.map(m => ({ month: m, fuel: 0, maintenance: 0 }))
+    fuelLogs.forEach(f => {
+      const date = new Date(f.date)
+      if (!isNaN(date.getTime())) data[date.getMonth()].fuel += Number(f.cost)
+    })
+    maintenanceLogs.forEach(m => {
+      const date = new Date(m.date)
+      if (!isNaN(date.getTime())) data[date.getMonth()].maintenance += Number(m.cost)
+    })
+    return data
+  }, [fuelLogs, maintenanceLogs])
+
+  const quarterlyData = useMemo(() => {
+    const quarters = ["Q1", "Q2", "Q3", "Q4"]
+    const data = quarters.map(q => ({ quarter: q, fuel: 0, maintenance: 0 }))
+    fuelLogs.forEach(f => {
+      const date = new Date(f.date)
+      if (!isNaN(date.getTime())) {
+        const q = Math.floor(date.getMonth() / 3)
+        data[q].fuel += Number(f.cost)
+      }
+    })
+    maintenanceLogs.forEach(m => {
+      const date = new Date(m.date)
+      if (!isNaN(date.getTime())) {
+        const q = Math.floor(date.getMonth() / 3)
+        data[q].maintenance += Number(m.cost)
+      }
+    })
+    return data
+  }, [fuelLogs, maintenanceLogs])
+
+  const chartData = timeView === "monthly" ? monthlyData : quarterlyData
   const xKey = timeView === "monthly" ? "month" : "quarter"
 
   // Vehicle ROI calculations
   const vehicleROI = vehicles.map((v) => {
     const completedTrips = trips.filter((t) => t.vehicleId === v.id && t.status === "Completed")
-    const fuelCost = fuelLogs.filter((f) => f.vehicleId === v.id).reduce((a, f) => a + f.cost, 0)
-    const maintCost = maintenanceLogs.filter((m) => m.vehicleId === v.id).reduce((a, m) => a + m.cost, 0)
+    const fuelCost = fuelLogs.filter((f) => f.vehicleId === v.id).reduce((a, f) => a + Number(f.cost), 0)
+    const maintCost = maintenanceLogs.filter((m) => m.vehicleId === v.id).reduce((a, m) => a + Number(m.cost), 0)
     const totalCost = fuelCost + maintCost
-    const revenue = completedTrips.reduce((a, t) => a + t.cargoWeight * 0.5, 0)
-    const roi = v.acquisitionCost > 0 ? ((revenue - totalCost) / v.acquisitionCost) * 100 : 0
-    const totalDistance = completedTrips.reduce((a, t) => a + ((t.endOdometer ?? 0) - t.startOdometer), 0)
-    const totalLiters = fuelLogs.filter((f) => f.vehicleId === v.id).reduce((a, f) => a + f.liters, 0)
+    const revenue = completedTrips.reduce((a, t) => a + Number(t.cargoWeight) * 0.5, 0)
+    const acquisitionCost = Number(v.acquisitionCost)
+    const roi = acquisitionCost > 0 ? ((revenue - totalCost) / acquisitionCost) * 100 : 0
+    const totalDistance = completedTrips.reduce((a, t) => a + (Number(t.endOdometer ?? 0) - Number(t.startOdometer)), 0)
+    const totalLiters = fuelLogs.filter((f) => f.vehicleId === v.id).reduce((a, f) => a + Number(f.liters), 0)
     const efficiency = totalLiters > 0 ? (totalDistance / totalLiters).toFixed(1) : "N/A"
 
     return {
@@ -109,7 +144,7 @@ export function AnalyticsPage() {
   })
 
   // Trend data for line chart
-  const trendData = monthlyCostData.map((d) => ({
+  const trendData = monthlyData.map((d) => ({
     ...d,
     total: d.fuel + d.maintenance,
   }))
@@ -131,8 +166,9 @@ export function AnalyticsPage() {
   const totalRevenue = vehicleROI.reduce((a, v) => a + v.revenue, 0)
   const totalCosts = vehicleROI.reduce((a, v) => a + v.totalCost, 0)
   const netProfit = totalRevenue - totalCosts
-  const totalFuelSpend = monthlyCostData.reduce((a, d) => a + d.fuel, 0)
-  const totalMaintSpend = monthlyCostData.reduce((a, d) => a + d.maintenance, 0)
+  const totalFuelSpend = monthlyData.reduce((a, d) => a + d.fuel, 0)
+  const totalMaintSpend = monthlyData.reduce((a, d) => a + d.maintenance, 0)
+  const formatVehicleId = (id: string) => (id.length > 10 ? `${id.slice(0, 10)}...` : id)
 
   return (
     <div className="flex flex-col gap-6 p-6">
@@ -247,12 +283,12 @@ export function AnalyticsPage() {
             <div className="flex items-center gap-2">
               <div className="size-3 rounded-sm bg-chart-3" />
               <span className="text-muted-foreground">Fuel Expenses</span>
-              <span className="font-semibold text-foreground">{"\u20B9"}{(timeView === "monthly" ? totalFuelSpend : quarterlyCostData.reduce((a, d) => a + d.fuel, 0)).toLocaleString()}</span>
+              <span className="font-semibold text-foreground">{"\u20B9"}{(timeView === "monthly" ? totalFuelSpend : quarterlyData.reduce((a, d) => a + d.fuel, 0)).toLocaleString()}</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="size-3 rounded-sm bg-chart-1" />
               <span className="text-muted-foreground">Maintenance Costs</span>
-              <span className="font-semibold text-foreground">{"\u20B9"}{(timeView === "monthly" ? totalMaintSpend : quarterlyCostData.reduce((a, d) => a + d.maintenance, 0)).toLocaleString()}</span>
+              <span className="font-semibold text-foreground">{"\u20B9"}{(timeView === "monthly" ? totalMaintSpend : quarterlyData.reduce((a, d) => a + d.maintenance, 0)).toLocaleString()}</span>
             </div>
           </div>
         </CardContent>
@@ -384,7 +420,7 @@ export function AnalyticsPage() {
                 <TableRow key={v.id}>
                   <TableCell>
                     <div className="flex items-center gap-2">
-                      <div className="flex size-6 items-center justify-center rounded bg-muted text-[10px] font-mono text-muted-foreground">{v.id}</div>
+                      <div className="flex size-6 items-center justify-center rounded bg-muted text-[10px] font-mono text-muted-foreground" title={v.id}>{formatVehicleId(v.id)}</div>
                       <span className="text-sm font-medium text-foreground">{v.name}</span>
                     </div>
                   </TableCell>

@@ -66,10 +66,10 @@ export function ExpensesPage() {
     : 0
 
   // Summary calculations
-  const totalFuel = fuelLogs.reduce((acc, f) => acc + f.cost, 0)
-  const totalMaintenance = maintenanceLogs.reduce((acc, m) => acc + m.cost, 0)
+  const totalFuel = fuelLogs.reduce((acc, f) => acc + Number(f.cost), 0)
+  const totalMaintenance = maintenanceLogs.reduce((acc, m) => acc + Number(m.cost), 0)
   const totalCost = totalFuel + totalMaintenance
-  const totalLiters = fuelLogs.reduce((acc, f) => acc + f.liters, 0)
+  const totalLiters = fuelLogs.reduce((acc, f) => acc + Number(f.liters), 0)
 
   // Filtered logged trips for the table
   const filteredLogged = loggedTrips.filter((t) => {
@@ -96,25 +96,29 @@ export function ExpensesPage() {
     }
   }
 
-  function handleLogExpense() {
+  async function handleLogExpense() {
     if (!selectedTripId || !finalOdometer || !actualFuelCost || !litersFilled) return
+    const tripToUpdate = trips.find((t) => t.id === selectedTripId)
+    const parsedFinalOdometer = Number(finalOdometer)
+    const parsedActualFuelCost = Number(actualFuelCost)
+    const parsedLitersFilled = Number(litersFilled)
 
     // Update the trip with expense data
-    updateTrip(selectedTripId, {
-      actualFuelCost: Number(actualFuelCost),
-      litersFilled: Number(litersFilled),
-      finalOdometer: Number(finalOdometer),
+    await updateTrip(selectedTripId, {
+      actualFuelCost: parsedActualFuelCost,
+      litersFilled: parsedLitersFilled,
+      finalOdometer: parsedFinalOdometer,
     })
 
     // Also add a fuel log entry for this trip
-    if (selectedTrip) {
-      addFuelLog({
-        vehicleId: selectedTrip.vehicleId,
-        tripId: selectedTrip.id,
-        liters: Number(litersFilled),
-        cost: Number(actualFuelCost),
-        date: selectedTrip.completedAt?.split("T")[0] ?? new Date().toISOString().split("T")[0],
-        odometer: Number(finalOdometer),
+    if (tripToUpdate) {
+      await addFuelLog({
+        vehicleId: tripToUpdate.vehicleId,
+        tripId: tripToUpdate.id,
+        liters: parsedLitersFilled,
+        cost: parsedActualFuelCost,
+        date: tripToUpdate.completedAt?.split("T")[0] ?? new Date().toISOString().split("T")[0],
+        odometer: parsedFinalOdometer,
       })
     }
 
@@ -136,7 +140,7 @@ export function ExpensesPage() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Total Operational</p>
-              <p className="text-lg font-bold text-foreground">{"₹"}{totalCost.toLocaleString()}</p>
+              <p className="text-lg font-bold text-foreground">{"\u20B9"}{totalCost.toLocaleString()}</p>
             </div>
           </CardContent>
         </Card>
@@ -147,7 +151,7 @@ export function ExpensesPage() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Total Fuel</p>
-              <p className="text-lg font-bold text-foreground">{"₹"}{totalFuel.toLocaleString()}</p>
+              <p className="text-lg font-bold text-foreground">{"\u20B9"}{totalFuel.toLocaleString()}</p>
             </div>
           </CardContent>
         </Card>
@@ -158,7 +162,7 @@ export function ExpensesPage() {
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Total Maintenance</p>
-              <p className="text-lg font-bold text-foreground">{"₹"}{totalMaintenance.toLocaleString()}</p>
+              <p className="text-lg font-bold text-foreground">{"\u20B9"}{totalMaintenance.toLocaleString()}</p>
             </div>
           </CardContent>
         </Card>
@@ -262,9 +266,9 @@ export function ExpensesPage() {
                     <TableCell>
                       <Badge variant="secondary" className="text-[10px] font-mono">{kmTraveled.toLocaleString()} km</Badge>
                     </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{"₹"}{(trip.estimatedFuelCost ?? 0).toLocaleString()}</TableCell>
-                    <TableCell className="text-xs font-medium text-foreground">{"₹"}{(trip.actualFuelCost ?? 0).toLocaleString()}</TableCell>
-                    <TableCell className="text-xs text-muted-foreground">{(trip.litersFilled ?? 0)} L</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{"\u20B9"}{Number(trip.estimatedFuelCost ?? 0).toLocaleString()}</TableCell>
+                    <TableCell className="text-xs font-medium text-foreground">{"\u20B9"}{Number(trip.actualFuelCost ?? 0).toLocaleString()}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{Number(trip.litersFilled ?? 0)} L</TableCell>
                   </TableRow>
                 )
               })}
@@ -301,7 +305,7 @@ export function ExpensesPage() {
                     const v = getVehicle(t.vehicleId)
                     return (
                       <SelectItem key={t.id} value={t.id}>
-                        {t.id} - {t.origin} {"→"} {t.destination} ({v?.name})
+                        {t.id} - {t.origin} {"\u2192"} {t.destination} ({v?.name})
                       </SelectItem>
                     )
                   })}
@@ -398,21 +402,21 @@ export function ExpensesPage() {
                 </div>
 
                 {/* Estimated vs Actual comparison */}
-                {selectedTrip.estimatedFuelCost && actualFuelCost && (
+                {Number(selectedTrip.estimatedFuelCost ?? 0) > 0 && actualFuelCost && (
                   <div className="rounded-lg border border-border bg-muted/30 p-3 flex items-center justify-between">
                     <div>
                       <p className="text-[10px] text-muted-foreground">Estimated</p>
-                      <p className="text-xs font-medium text-foreground">{"₹"}{selectedTrip.estimatedFuelCost.toLocaleString()}</p>
+                      <p className="text-xs font-medium text-foreground">{"\u20B9"}{Number(selectedTrip.estimatedFuelCost ?? 0).toLocaleString()}</p>
                     </div>
                     <ArrowRight className="size-3.5 text-muted-foreground" />
                     <div>
                       <p className="text-[10px] text-muted-foreground">Actual</p>
-                      <p className="text-xs font-medium text-foreground">{"₹"}{Number(actualFuelCost).toLocaleString()}</p>
+                      <p className="text-xs font-medium text-foreground">{"\u20B9"}{Number(actualFuelCost).toLocaleString()}</p>
                     </div>
                     <div>
                       <p className="text-[10px] text-muted-foreground">Difference</p>
-                      <p className={`text-xs font-medium ${Number(actualFuelCost) <= selectedTrip.estimatedFuelCost ? "text-success" : "text-destructive"}`}>
-                        {Number(actualFuelCost) <= selectedTrip.estimatedFuelCost ? "-" : "+"}{"₹"}{Math.abs(Number(actualFuelCost) - selectedTrip.estimatedFuelCost).toLocaleString()}
+                      <p className={`text-xs font-medium ${Number(actualFuelCost) <= Number(selectedTrip.estimatedFuelCost ?? 0) ? "text-success" : "text-destructive"}`}>
+                        {Number(actualFuelCost) <= Number(selectedTrip.estimatedFuelCost ?? 0) ? "-" : "+"}{"\u20B9"}{Math.abs(Number(actualFuelCost) - Number(selectedTrip.estimatedFuelCost ?? 0)).toLocaleString()}
                       </p>
                     </div>
                   </div>
@@ -435,3 +439,4 @@ export function ExpensesPage() {
     </div>
   )
 }
+

@@ -5,6 +5,7 @@ const pool = mysql.createPool({
   user: "root",
   password: "",        // XAMPP default empty
   database: "fleetflow",
+  decimalNumbers: true,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0

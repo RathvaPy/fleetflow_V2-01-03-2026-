@@ -122,7 +122,7 @@ export function MaintenancePage() {
             <div>
               <p className="text-xs text-muted-foreground">Total Cost</p>
               <p className="text-lg font-bold text-foreground">
-                {"\u20B9"}{maintenanceLogs.reduce((acc, m) => acc + m.cost, 0).toLocaleString()}
+                {"\u20B9"}{maintenanceLogs.reduce((acc, m) => acc + Number(m.cost), 0).toLocaleString()}
               </p>
             </div>
           </CardContent>
@@ -169,7 +169,7 @@ export function MaintenancePage() {
                     <TableCell className="text-sm text-foreground">{vehicle?.name ?? log.vehicleId}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">{log.type}</TableCell>
                     <TableCell className="text-xs text-muted-foreground max-w-48 truncate">{log.description}</TableCell>
-                    <TableCell className="text-xs font-medium text-foreground">{"\u20B9"}{log.cost.toLocaleString()}</TableCell>
+                    <TableCell className="text-xs font-medium text-foreground">{"\u20B9"}{Number(log.cost).toLocaleString()}</TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(log.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                     </TableCell>

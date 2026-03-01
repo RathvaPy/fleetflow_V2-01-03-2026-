@@ -106,6 +106,8 @@ export function VehiclesPage() {
     Retired: "bg-muted text-muted-foreground",
   }
 
+  const formatVehicleId = (id: string) => (id.length > 10 ? `${id.slice(0, 10)}...` : id)
+
   return (
     <div className="flex flex-col gap-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -159,7 +161,7 @@ export function VehiclesPage() {
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <div className="flex size-7 items-center justify-center rounded-md bg-muted text-xs font-mono text-muted-foreground">
-                        {v.id}
+                        <span title={v.id}>{formatVehicleId(v.id)}</span>
                       </div>
                       <span className="text-sm font-medium text-foreground">{v.name}</span>
                     </div>

@@ -33,9 +33,25 @@ const API_URL = "/api/auth"
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
+const USER_STORAGE_KEY = "fleetflow_user"
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Restore user from localStorage on page load
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(USER_STORAGE_KEY)
+      if (stored) {
+        setUser(JSON.parse(stored))
+      }
+    } catch {
+      localStorage.removeItem(USER_STORAGE_KEY)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
 
   const login = useCallback(async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
     if (!email || !password) return { success: false, error: "Please fill in all fields." }
@@ -55,6 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setUser(data)
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data))
       return { success: true }
     } catch (error) {
       console.error("Login error:", error)
@@ -82,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setUser(data)
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(data))
       return { success: true }
     } catch (error) {
       console.error("Signup error:", error)
@@ -98,6 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     setUser(null)
+    localStorage.removeItem(USER_STORAGE_KEY)
   }, [])
 
   const hasAccess = useCallback(
